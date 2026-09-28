@@ -16,7 +16,10 @@ independent clean-room implementation, GPL-3.0 licensed.
 ## Features
 
 - **Draw-to-cut** — drag a straight line or a freehand stroke across the
-  mesh; only the geometry under the stroke is cut. Both halves come out
+  mesh; only the geometry under the stroke is cut. A part the stroke
+  touches is severed all the way through, even if the stroke stops short
+  of its edge, while parts that merely line up with the stroke (the other
+  arm, the next finger) are left alone. Both halves come out
   watertight, with the total volume conserved (the cut is pure `bmesh`
   bisection — no boolean, no kerf).
 - **One-click joints** — select the two halves and generate a joint sized
