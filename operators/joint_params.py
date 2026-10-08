@@ -98,6 +98,12 @@ class JointParamsMixin:
         description="Scale factor applied to the auto size",
         default=1.0, min=0.1, max=3.0,
     )
+    depth_scale: bpy.props.FloatProperty(
+        name="Depth Scale",
+        description="How deep the peg reaches into the female half, "
+        "relative to the auto size (capped by the available material)",
+        default=1.0, min=0.25, max=3.0,
+    )
     width: bpy.props.FloatProperty(
         name="Width", subtype='DISTANCE',
         description="Joint width (manual mode)",
@@ -169,6 +175,13 @@ class JointParamsMixin:
         description="Key taper for easier insertion and press fit",
         default=math.radians(2.0),
         min=0.0, max=math.radians(15.0),
+    )
+    trap_angle: bpy.props.FloatProperty(
+        name="Side Angle", subtype='ANGLE',
+        description="Inward lean of each trapezoid side; the key narrows "
+        "toward the tip so it self-centres and wedges snug",
+        default=math.radians(10.0),
+        min=0.0, max=math.radians(30.0),
     )
     ball_opening_ratio: bpy.props.FloatProperty(
         name="Opening Ratio",
@@ -257,6 +270,7 @@ class JointParamsMixin:
             'snap': self.cyl_snap,
             'snap_mm': self.cyl_snap_mm,
             'cross_taper': self.cross_taper,
+            'trap_angle': self.trap_angle,
             'opening_ratio': self.ball_opening_ratio,
             'rom': self.ball_rom,
             'neck_ratio': self.ball_neck_ratio,
@@ -291,11 +305,18 @@ class JointParamsMixin:
             raise JointError(
                 "The selected objects do not share a PrintSplit cut")
 
-        section = cross_section.compute_cross_section(male, cut_id)
+        seam_faces, n_shared = cross_section.shared_seam(
+            male, female, cut_id)
+        section = cross_section.compute_cross_section(
+            male, cut_id, seam_faces)
         if section is None:
             raise JointError("Could not analyze the cut cross-section")
 
         warnings = []
+        if n_shared > 1:
+            warnings.append(
+                f"The halves meet at {n_shared} separate seams; the joint "
+                "was placed on the largest one")
         if section.normal_spread > _MAX_NORMAL_SPREAD:
             warnings.append(
                 "The cut surface is strongly curved; the joint may not "
@@ -394,7 +415,7 @@ class JointParamsMixin:
                 return sized
             width = 0.45 * base * self.scale
             thickness = 0.6 * width
-            depth = 0.75 * width
+            depth = 0.75 * width * self.depth_scale
         else:
             # Manual dims are entered in scene units -> mesh-local.
             width = self.width / obj_scale
@@ -403,7 +424,11 @@ class JointParamsMixin:
 
         from ..joints import JointSize
 
-        depth = min(depth, avail_female * 0.8)
+        if depth > avail_female * 0.8:
+            depth = avail_female * 0.8
+            params['warnings'].append(
+                "Joint depth limited by the material available in the "
+                "female half")
         embed = min(0.5 * width, avail_male * 0.8)
         if depth <= clearance * 4.0 or embed <= 0.0:
             return None
@@ -477,6 +502,8 @@ class JointParamsMixin:
         layout.prop(self, "auto_size")
         if self.auto_size:
             layout.prop(self, "scale")
+            if not get_shape(self.shape).movable:
+                layout.prop(self, "depth_scale")
         else:
             layout.prop(self, "width")
             layout.prop(self, "depth")
