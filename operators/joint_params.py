@@ -80,6 +80,43 @@ def _on_shape_change(self, context):
         _updating_clearance = False
 
 
+def _probe_spans(male, female, section, frame, size, clearance):
+    """How far the joint's own part reaches along the joint X and Y axes.
+
+    Full-width joints (hinge barrel, dovetail rail) run along one of these
+    axes and must end just past the model surface. A fixed multiple of
+    the seam size reaches into anything lying in line with the joint —
+    at a knee, the other leg. Ray-cast from inside both halves at a few
+    heights through the joint; the span is the furthest exit plus a small
+    margin, never more than the old fixed reach.
+
+    Returns ((x_lo, x_hi), (y_lo, y_hi)) in joint-local units.
+    """
+    t = frame.col[0].to_3d()
+    b = frame.col[1].to_3d()
+    n = frame.col[2].to_3d()
+    center = frame.translation
+    eps = 1e-3 * min(section.extent_t, section.extent_b)
+    probes = [(male, -eps), (male, -0.5 * size.embed),
+              (male, -0.9 * size.embed),
+              (female, eps), (female, 0.5 * size.depth),
+              (female, 0.9 * size.depth)]
+    margin = (0.1 * min(section.extent_t, section.extent_b)
+              + 2.0 * clearance)
+
+    def reach(direction, cap):
+        far = 0.0
+        for obj, z in probes:
+            far = max(far, cross_section.material_depth(
+                obj, center + n * z, direction, cap))
+        return min(far + margin, cap)
+
+    cap_x = 1.5 * section.extent_t
+    cap_y = max(1.5 * section.extent_b, size.thickness / 2.0)
+    return ((-reach(-t, cap_x), reach(t, cap_x)),
+            (-reach(-b, cap_y), reach(b, cap_y)))
+
+
 class JointParamsMixin:
     shape: bpy.props.EnumProperty(
         name="Shape", items=_joint_shape_items, update=_on_shape_change)
@@ -353,6 +390,8 @@ class JointParamsMixin:
         warnings.extend(params['warnings'])
 
         frame = section.matrix(self.rotation)
+        params['span_x'], params['span_y'] = _probe_spans(
+            male, female, section, frame, size, clearance)
         male_matrix = male.matrix_world @ frame
         female_matrix = female.matrix_world @ frame
 
